@@ -23,6 +23,10 @@ func XValueOfValue(rv reflect.Value) XValue {
 		return &XValue_Primitive{rv}
 	case reflect.Slice:
 		return &XValue_Slice{rv}
+	case reflect.Map:
+		return &XValue_Map{rv}
+	case reflect.Interface:
+		return &XValue_Interface{rv}
 	default:
 		panic(fmt.Sprintf("Unknown type %s", riv.Kind().String()))
 	}
