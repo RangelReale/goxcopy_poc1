@@ -37,6 +37,8 @@ func (x *XValue_Struct) To(dst interface{}) error {
 }
 
 func (x *XValue_Struct) ToXValue(dst XValue) error {
+	//fmt.Printf("Copying %s to %s\n", x.Name(), dst.Name())
+
 	if !dst.HasFields() {
 		return fmt.Errorf("Cannot copy Struct to %s", dst.Name())
 	}
@@ -67,6 +69,8 @@ func (x *XValue_Struct) HasFields() bool {
 }
 
 func (x *XValue_Struct) SetField(fieldname string, v reflect.Value) error {
+	//fmt.Printf("SetField %s on %s\n", fieldname, x.Name())
+
 	xv := reflect.Indirect(x.v)
 
 	var (
@@ -103,6 +107,8 @@ func (x *XValue_Slice) To(dst interface{}) error {
 }
 
 func (x *XValue_Slice) ToXValue(dst XValue) error {
+	//fmt.Printf("Copying %s to %s\n", x.Name(), dst.Name())
+
 	if !dst.HasFields() {
 		return fmt.Errorf("Cannot copy Slice to %s", dst.Name())
 	}
@@ -127,6 +133,8 @@ func (x *XValue_Slice) HasFields() bool {
 }
 
 func (x *XValue_Slice) SetField(fieldname string, v reflect.Value) error {
+	//fmt.Printf("SetField %s on %s\n", fieldname, x.Name())
+
 	idx, err := strconv.ParseInt(fieldname, 10, 32)
 	if err != nil {
 		return fmt.Errorf("Error parsing slice index '%s': %v", fieldname, err)
@@ -157,7 +165,11 @@ type XValue_Primitive struct {
 }
 
 func (x *XValue_Primitive) Name() string {
-	return "Primitive"
+	ptr := ""
+	if x.v.Kind() == reflect.Ptr {
+		ptr = "*"
+	}
+	return fmt.Sprintf("Primitive '%s%s'", ptr, rprim.IndirectType(x.v.Type()).Kind().String())
 }
 
 func (x *XValue_Primitive) IsXValue() {}
@@ -167,6 +179,8 @@ func (x *XValue_Primitive) To(dst interface{}) error {
 }
 
 func (x *XValue_Primitive) ToXValue(dst XValue) error {
+	//fmt.Printf("Copying %s to %s\n", x.Name(), dst.Name())
+
 	if dst.HasFields() {
 		return fmt.Errorf("Cannot copy Primitive to %s", dst.Name())
 	}
@@ -186,6 +200,8 @@ func (x *XValue_Primitive) HasFields() bool {
 }
 
 func (x *XValue_Primitive) SetField(fieldname string, v reflect.Value) error {
+	//fmt.Printf("SetField %s on %s\n", fieldname, x.Name())
+
 	return fmt.Errorf("Cannot set Field on Primitive")
 }
 
