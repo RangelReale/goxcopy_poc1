@@ -14,7 +14,7 @@ type XValue interface {
 	Name() string
 	IsXValue()
 	To(dst interface{}) error
-	ToXValue(dst XValue) error
+	ToXValue(dst XValue, setter XValueSetter) error
 
 	HasFields() bool
 	SetField(fieldname string, v reflect.Value) error
@@ -34,10 +34,10 @@ func (x *XValue_Struct) Name() string {
 func (x *XValue_Struct) IsXValue() {}
 
 func (x *XValue_Struct) To(dst interface{}) error {
-	return x.ToXValue(XValueOfInterface(dst))
+	return x.ToXValue(XValueOfInterface(dst), &XValueSetter_Error{})
 }
 
-func (x *XValue_Struct) ToXValue(dst XValue) error {
+func (x *XValue_Struct) ToXValue(dst XValue, setter XValueSetter) error {
 	//fmt.Printf("Copying %s to %s\n", x.Name(), dst.Name())
 
 	if !dst.HasFields() {
@@ -74,20 +74,14 @@ func (x *XValue_Struct) SetField(fieldname string, v reflect.Value) error {
 
 	xv := reflect.Indirect(x.v)
 
-	var (
-		fieldValue            = xv.FieldByName(fieldname)
-		fieldType, fieldFound = xv.Type().FieldByName(fieldname)
-	)
+	fieldValue := xv.FieldByName(fieldname)
+	_, fieldFound := xv.Type().FieldByName(fieldname)
 
 	if !fieldFound {
 		return nil
 	}
 
-	if fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil() {
-		fieldValue.Set(reflect.New(fieldType.Type.Elem()))
-	}
-
-	return XValueOfValue(v).ToXValue(XValueOfValue(fieldValue))
+	return XValueOfValue(v).ToXValue(XValueOfValue(fieldValue), &XValueSetter_StructField{x.v, fieldname})
 }
 
 //
@@ -104,10 +98,10 @@ func (x *XValue_Slice) Name() string {
 func (x *XValue_Slice) IsXValue() {}
 
 func (x *XValue_Slice) To(dst interface{}) error {
-	return x.ToXValue(XValueOfInterface(dst))
+	return x.ToXValue(XValueOfInterface(dst), &XValueSetter_Error{})
 }
 
-func (x *XValue_Slice) ToXValue(dst XValue) error {
+func (x *XValue_Slice) ToXValue(dst XValue, setter XValueSetter) error {
 	//fmt.Printf("Copying %s to %s\n", x.Name(), dst.Name())
 
 	if !dst.HasFields() {
@@ -155,7 +149,7 @@ func (x *XValue_Slice) SetField(fieldname string, v reflect.Value) error {
 		fieldValue = xv.Index(int(idx))
 	)
 
-	return XValueOfValue(v).ToXValue(XValueOfValue(fieldValue))
+	return XValueOfValue(v).ToXValue(XValueOfValue(fieldValue), &XValueSetter_Slice{v: x.v, idx: int(idx)})
 }
 
 //
@@ -172,10 +166,10 @@ func (x *XValue_Map) Name() string {
 func (x *XValue_Map) IsXValue() {}
 
 func (x *XValue_Map) To(dst interface{}) error {
-	return x.ToXValue(XValueOfInterface(dst))
+	return x.ToXValue(XValueOfInterface(dst), &XValueSetter_Error{})
 }
 
-func (x *XValue_Map) ToXValue(dst XValue) error {
+func (x *XValue_Map) ToXValue(dst XValue, setter XValueSetter) error {
 	//fmt.Printf("Copying %s to %s\n", x.Name(), dst.Name())
 
 	if !dst.HasFields() {
@@ -228,7 +222,7 @@ func (x *XValue_Map) SetField(fieldname string, v reflect.Value) error {
 
 	fieldValue = xv.MapIndex(keycv)
 
-	return XValueOfValue(v).ToXValue(XValueOfValue(fieldValue))
+	return XValueOfValue(v).ToXValue(XValueOfValue(fieldValue), &XValueSetter_Map{v: x.v, key: keycv})
 }
 
 func (x *XValue_Map) fromString(value string, t reflect.Type) (reflect.Value, error) {
@@ -275,10 +269,10 @@ func (x *XValue_Primitive) Name() string {
 func (x *XValue_Primitive) IsXValue() {}
 
 func (x *XValue_Primitive) To(dst interface{}) error {
-	return x.ToXValue(XValueOfInterface(dst))
+	return x.ToXValue(XValueOfInterface(dst), &XValueSetter_Error{})
 }
 
-func (x *XValue_Primitive) ToXValue(dst XValue) error {
+func (x *XValue_Primitive) ToXValue(dst XValue, setter XValueSetter) error {
 	//fmt.Printf("Copying %s to %s\n", x.Name(), dst.Name())
 
 	if dst.HasFields() {
@@ -287,10 +281,11 @@ func (x *XValue_Primitive) ToXValue(dst XValue) error {
 
 	switch xdst := dst.(type) {
 	case *XValue_Primitive:
-		return x.setPrimitiveValue(xdst)
+		return x.setPrimitiveValue(xdst, setter)
 	case *XValue_Interface:
 		// can set anything to interface{}
-		xdst.v.Set(x.v)
+		//xdst.v.Set(x.v)
+		setter.SetValue(x.v)
 		return nil
 	default:
 		return fmt.Errorf("Cannot copy Primitive to %s", dst.Name())
@@ -309,7 +304,7 @@ func (x *XValue_Primitive) SetField(fieldname string, v reflect.Value) error {
 	return fmt.Errorf("Cannot set Field on Primitive")
 }
 
-func (x *XValue_Primitive) setPrimitiveValue(dst *XValue_Primitive) error {
+func (x *XValue_Primitive) setPrimitiveValue(dst *XValue_Primitive, setter XValueSetter) error {
 	cop := rprim.ConvertOp(dst.v, x.v, rprim.COP_ALLOW_NIL_TO_ZERO)
 	if cop == nil {
 		return fmt.Errorf("Could not convert between primitives %s and %s", x.v.Kind().String(), dst.v.Kind().String())
@@ -318,7 +313,8 @@ func (x *XValue_Primitive) setPrimitiveValue(dst *XValue_Primitive) error {
 	if err != nil {
 		return err
 	}
-	dst.v.Set(cv)
+	//dst.v.Set(cv)
+	setter.SetValue(cv)
 	return nil
 }
 
@@ -336,10 +332,10 @@ func (x *XValue_Interface) Name() string {
 func (x *XValue_Interface) IsXValue() {}
 
 func (x *XValue_Interface) To(dst interface{}) error {
-	return x.ToXValue(XValueOfInterface(dst))
+	return x.ToXValue(XValueOfInterface(dst), &XValueSetter_Error{})
 }
 
-func (x *XValue_Interface) ToXValue(dst XValue) error {
+func (x *XValue_Interface) ToXValue(dst XValue, setter XValueSetter) error {
 	//fmt.Printf("Copying %s to %s\n", x.Name(), dst.Name())
 
 	if dst.HasFields() {
@@ -348,7 +344,7 @@ func (x *XValue_Interface) ToXValue(dst XValue) error {
 
 	switch xdst := dst.(type) {
 	case *XValue_Primitive:
-		return x.setPrimitiveValue(xdst)
+		return x.setPrimitiveValue(xdst, setter)
 	default:
 		return fmt.Errorf("Cannot copy Interface to %s", dst.Name())
 	}
@@ -366,7 +362,7 @@ func (x *XValue_Interface) SetField(fieldname string, v reflect.Value) error {
 	return fmt.Errorf("Cannot set Field on Interface")
 }
 
-func (x *XValue_Interface) setPrimitiveValue(dst *XValue_Primitive) error {
+func (x *XValue_Interface) setPrimitiveValue(dst *XValue_Primitive, setter XValueSetter) error {
 	cop := rprim.ConvertOp(dst.v, x.v, rprim.COP_ALLOW_NIL_TO_ZERO)
 	if cop == nil {
 		return fmt.Errorf("Could not convert between primitives %s and %s", x.v.Kind().String(), dst.v.Kind().String())
@@ -375,6 +371,7 @@ func (x *XValue_Interface) setPrimitiveValue(dst *XValue_Primitive) error {
 	if err != nil {
 		return err
 	}
-	dst.v.Set(cv)
+	//dst.v.Set(cv)
+	setter.SetValue(cv)
 	return nil
 }
